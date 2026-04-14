@@ -68,21 +68,16 @@ def init_database(drop):
     db.create_all()
     click.echo('Initialized database.') # 输出提示信息
 
+@app.context_processor
+def inject_user():
+    user = db.session.execute(select(User)).scalar()
+    return dict(user=user)
+
 @app.route('/')
 def index():
-    user = db.session.execute(select(User)).scalar() # 读取用户记录
     movies = db.session.execute(select(Movie)).scalars().all() # 读取所有电影记录
-    return render_template('index.html', user=user, movies=movies)
+    return render_template('index.html', movies=movies)
 
-@app.route('/user/<name>')
-def user_page(name):
-    return f'User: {escape(name)}'
-
-@app.route('/test')
-def test_url_for():
-    print(url_for('hello'))
-    print(url_for('user_page', name="greyli"))
-    print(url_for('user_page', name="peter"))
-    print(url_for('test_url_for'))
-    print(url_for('test_url_for', num=2))
-    return 'Test page'
+@app.errorhandler(404)
+def page_not_found(error):
+    return render_template('404.html'), 404
