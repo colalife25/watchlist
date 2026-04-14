@@ -1,14 +1,25 @@
-from flask import Flask
-from flask import url_for
+from flask import Flask, url_for, render_template
 from markupsafe import escape
+
+name = 'Grey Li'
+movies = [
+    {'title': 'My Neighbor Totoro', 'year': '1998'},
+    {'title': 'Dead Poets Society', 'year': '1989'},
+    {'title': 'A Perfect World', 'year': '1993'},
+    {'title': 'Leon', 'year': '1994'},
+    {'title': 'Mahjong', 'year': '1996'},
+    {'title': 'Swallowtail Butterfly', 'year': '1999'},
+    {'title': 'King of Comedy', 'year': '1999'},
+    {'title': 'Devils on the Doorstep', 'year': '1999'},
+    {'title': 'WALL-E', 'year': '2008'},
+    {'title': 'The Pork of Music', 'year': '2012'},
+]
 
 app = Flask(__name__)
 
 @app.route('/')
-@app.route('/index')
-@app.route('/home')
-def hello():
-    return "Welcome to My Watchlist!"
+def index():
+    return render_template('index.html', name=name, movies=movies)
 
 @app.route('/user/<name>')
 def user_page(name):
