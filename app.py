@@ -2,13 +2,15 @@ import os
 import sys
 import click
 from pathlib import Path
-
+from typing import Optional
 from flask import Flask, url_for, render_template, redirect, flash, request
 from markupsafe import escape
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy import String, select
 from sqlalchemy.orm import Mapped, mapped_column
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 
 SQLITE_PREFIX = 'sqlite:///' if sys.platform.startswith('win') else 'sqlite:////'
 
@@ -21,16 +23,32 @@ class Base(DeclarativeBase):
 
 db = SQLAlchemy(app, model_class=Base)
 
-class User(db.Model):
+class User(db.Model, UserMixin):
     __tablename__ = 'user'
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(20))
+    username: Mapped[str] = mapped_column(String(20))
+    password_hash: Mapped[Optional[str]] = mapped_column(String(128))
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+    
+    def validate_password(self, password):
+        return check_password_hash(self.password_hash, password)
 
 class Movie(db.Model):
     __tablename__ = 'movie'
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(String(60))
     year: Mapped[str] = mapped_column(String(4))
+
+login_manager = LoginManager(app)
+login_manager.login_view = 'login'
+
+@login_manager.user_loader
+def load_user(user_id):
+    user = db.session.get(User, int(user_id))
+    return user
 
 @app.cli.command()
 def forge():
@@ -52,7 +70,8 @@ def forge():
         {'title': 'The Pork of Music', 'year': '2012'},
     ]
 
-    user = User(name=name)
+    user = User(name=name, username='admin')
+    user.set_password('helloflask')
     db.session.add(user)
     for m in movies:
         movie = Movie(title=m['title'], year=m['year'])
@@ -70,6 +89,26 @@ def init_database(drop):
     db.create_all()
     click.echo('Initialized database.') # 输出提示信息
 
+@app.cli.command()
+@click.option('--username', prompt=True, help='The username used to login.')
+@click.option('--password', prompt=True, hide_input=True, confirmation_prompt=True, help='The password used to login.')
+def admin(username, password):
+    db.create_all()
+
+    user = db.session.execute(select(User)).scalar()
+    if user is not None:
+        click.echo('Updating user...')
+        user.username = username
+        user.set_password(password)
+    else:
+        click.echo('Creating user...')
+        user = User(username=username, name='Admin')
+        user.set_password(password)
+        db.session.add(user)
+    
+    db.session.commit()
+    click.echo('Done.')
+
 @app.context_processor
 def inject_user():
     user = db.session.execute(select(User)).scalar()
@@ -78,6 +117,8 @@ def inject_user():
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST': # 判断是否是POST请求
+        if not current_user.is_authenticated:
+            return redirect(url_for('index'))
         # 获取表单数据
         title = request.form.get('title').strip() # 传入表单对应输入字段的 name 值
         year = request.form.get('year').strip()
@@ -101,6 +142,7 @@ def page_not_found(error):
     return render_template('404.html'), 404
 
 @app.route('/movie/edit/<int:movie_id>', methods=['GET', 'POST'])
+@login_required
 def edit(movie_id):
     movie = db.get_or_404(Movie, movie_id)
 
@@ -122,9 +164,55 @@ def edit(movie_id):
     return render_template('edit.html', movie=movie) # 传入被编辑的电影记录
 
 @app.route('/movie/delete/<int:movie_id>', methods=['POST'])
+@login_required
 def delete(movie_id):
     movie = db.get_or_404(Movie, movie_id)
     db.session.delete(movie)
     db.session.commit()
     flash('Item deleted.')
     return redirect(url_for('index'))
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+
+        if not username or not password:
+            flash('Invalid input.')
+            return redirect(url_for('login'))
+        
+        user = db.session.execute(select(User).filter_by(username=username)).scalar()
+        if user is not None and user.validate_password(password):
+            login_user(user)
+            flash('Login success.')
+            return redirect(url_for('index'))
+
+        flash('Invalid username or password.')
+        return redirect(url_for('login'))
+
+    return render_template('login.html')
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    flash('Goodbye.')
+    return redirect(url_for('index'))
+
+@app.route('/settings', methods=['GET', 'POST'])
+@login_required
+def settings():
+    if request.method == 'POST':
+        name = request.form.get('name')
+
+        if not name or len(name) > 20:
+            flash('Invalid input.')
+            return redirect(url_for('settings'))
+        
+        current_user.name = name
+        db.session.commit()
+        flash('Settings updated.')
+        return redirect(url_for('index'))
+    
+    return render_template('settings.html')
