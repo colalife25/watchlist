@@ -5,7 +5,7 @@ from watchlist.models import User, Movie
 
 def register_commands(app):
 
-    @app.cli.command('initdb')
+    @app.cli.command('init-db')
     @click.option('--drop', is_flag=True, help='Create after drop.')
     def initdb(drop):
         """Initialize the database."""

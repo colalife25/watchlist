@@ -9,7 +9,7 @@ from watchlist.errors import register_errors
 from watchlist.commands import register_commands
 from watchlist.settings import config
 
-def create_app(config_name='development'):
+def create_app(config_name='testing'):
     app = Flask(__name__)
     
     app.config.from_object(config[config_name])
